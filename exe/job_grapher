@@ -1,0 +1,9 @@
+#!/usr/bin/env ruby -U
+
+require_relative File.expand_path("../lib/job_grapher", __dir__)
+
+if ARGV.size == 0
+  $STDERR.puts "You must provide at least one directory"
+  exit!(1)
+end
+JobGrapher.plantuml_for(dirs: ARGV)
