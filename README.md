@@ -6,6 +6,10 @@ This gem outputs a [PlantUML](https://plantuml.com) diagram of class/location's 
 
 This gem requires [Ripgrep](https://github.com/BurntSushi/ripgrep).
 
+## General Notes
+
+While this is specific to application jobs, it would not take much to generalize this for class/module references.  In other words show the relationships between constants.
+
 ## Installation
 
 Install the gem and add to the application's Gemfile by executing:
