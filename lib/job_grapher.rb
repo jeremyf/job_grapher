@@ -138,7 +138,7 @@ module JobGrapher
 
   class PerformInformation
     def self.each_from(dir)
-      command = %(rg "^ *[^#]*Job\\.perform" #{dir} -g '!spec/' -n)
+      command = %(rg "^ *[^#]*Job\\.(perform|_*send_*|public_send)" #{dir} -g '!spec/' -n)
       `#{command}`.split("\n").each do |line|
         parser = Parser.new(line)
         info = new(
@@ -160,7 +160,7 @@ module JobGrapher
 
     class Parser
       LINE_REGEXP = %r{(?<path>[^:]*):(?<line_number>[^:]*):(?<content>.*)}
-      JOB_REGEXP = %r{(?<job>[\w:]+Job)\.perform}
+      JOB_REGEXP = %r{(?<job>[\w:]+Job)\.(perform|_*send_*|public_send)}
       def initialize(grep_result_line)
         @grep_result_line = grep_result_line
         match = LINE_REGEXP.match(grep_result_line)
