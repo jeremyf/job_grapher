@@ -1,6 +1,6 @@
 require "set"
 
-# @see .plant_uml
+# @see .plantuml_for
 module JobGrapher
   DEFAULT_FILTER = ->(job) { true }
   DEFAULT_PATH_FORMATTER = -> (path) { path.sub(ENV['HOME'], "~") }
@@ -33,6 +33,8 @@ module JobGrapher
     true
   end
 
+  # An accumulator class for adding declarations and perform information, then
+  # rendering that accumlated data (see #to_plantuml)
   class Graph
     def initialize(filter:)
       @performances = []
@@ -40,15 +42,19 @@ module JobGrapher
       @filter = filter
     end
 
+    # @param declaration [JobGrapher::JobDeclaration]
     def add_declaration(declaration)
       @declarations << declaration
     end
 
+    # @param info [JobGrapher::PerformInformation]
     def add_perform_info(info)
       @performances << info
     end
 
-    def to_plantuml(buffer:, path_formatter:)
+    # @param buffer [#puts] where are we putting the data we've gathered?
+    # @param path_formatter [#call] how we format a raw path to a file
+    def to_plantuml(buffer:, path_formatter: DEFAULT_PATH_FORMATTER)
       buffer.puts "@startuml"
       resolver = Resolver.new(
         declarations: @declarations,
@@ -62,38 +68,40 @@ module JobGrapher
       end
       buffer.puts "@enduml"
     end
-  end
 
-  class Resolver
-    def initialize(declarations:, performances:, filter:, path_formatter:)
-      @declarations = declarations
-      @performances = performances
-      @filter = filter
-      @path_formatter = path_formatter
-      compile!
-    end
+    class Resolver
+      def initialize(declarations:, performances:, filter:, path_formatter:)
+        @declarations = declarations
+        @performances = performances
+        @filter = filter
+        @path_formatter = path_formatter
+        compile!
+      end
 
-    attr_reader :edges, :filter, :path_formatter
+      attr_reader :edges, :filter, :path_formatter
 
-    Edge = Struct.new(:from, :to, keyword_init: true)
+      Edge = Struct.new(:from, :to, keyword_init: true)
 
-    # For each performance's job_class_name_candidates find the corresponding constant.
-    def compile!
-      @edges = Set.new
-      jobs = @declarations.map(&:job_class_name)
-      @performances.each do |perf|
-        from = path_formatter.call(perf.invoking_constant)
-        to = perf.job_class_name_candidates.find do |cand|
-          jobs.include?(cand)
+      # For each performance's job_class_name_candidates find the corresponding
+      # constant.
+      def compile!
+        @edges = Set.new
+        jobs = @declarations.map(&:job_class_name)
+        @performances.each do |perf|
+          from = path_formatter.call(perf.invoking_constant)
+          to = perf.job_class_name_candidates.find do |cand|
+            jobs.include?(cand)
+          end
+          next unless filter.call(to)
+          @edges << Edge.new(from: from, to: to)
         end
-        next unless filter.call(to)
-        @edges << Edge.new(from: from, to: to)
       end
     end
   end
 
   # This module extracts the qualified constant name for a declared
-  # class/module.
+  # class/module.  We make a fundamental assumption that folks are properly
+  # indenting their nested classes and modules.
   module QualifiedConstantNameExtractor
     NAMESPACE_REGEXP = %r{^(?<padding> *)(class|module) +(?<namespace>[\w:]+)[ \n]}
     # @param path [String]
@@ -136,6 +144,11 @@ module JobGrapher
     private_class_method :determine_namespace_from
   end
 
+
+  # This class has two responsibilities:
+  #
+  # 1. A simple data structure (e.g. an instance of the class)
+  # 2. Building the data structure from the given directory; see .each_from
   class PerformInformation
     def self.each_from(dir)
       command = %(rg "^ *[^#]*Job\\.(perform|_*send_*|public_send)" #{dir} -g '!spec/' -n)
@@ -196,8 +209,13 @@ module JobGrapher
 
   end
 
-  # This class is responsible for parsing where we found a job and building the possible name space of
-  # the job.
+  # This class has two responsibilities:
+  #
+  # 1. Determining all of the class declarations of a Job; see .each_from
+  # 2. Exposing the job's class name; see #job_class_name
+  #
+  # The instance of the class is a simple data structure.  The .each_from yields
+  # each data structure for matching declarations.
   class JobDeclaration
     def self.each_from(dir)
       command = %(rg "^ *class ([\\w:]+)Job <" #{dir} -g '!spec/' -n)
