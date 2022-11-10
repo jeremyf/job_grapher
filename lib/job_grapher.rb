@@ -104,9 +104,15 @@ module JobGrapher
   # indenting their nested classes and modules.
   module QualifiedConstantNameExtractor
     NAMESPACE_REGEXP = %r{^(?<padding> *)(class|module) +(?<namespace>[\w:]+)[ \n]}
+    # For the given :path determine the constant that "contains" the given
+    # :line_number.  We rely on the conventional indentation to read backwards
+    # from the given line_number to determine the constant.
+    #
     # @param path [String]
     # @param line_number [Integer, #to_i]
-    # @return [String]
+    #
+    # @return [String] a 0-length string means we can't determine the constant
+    #         in which the given line_number is part of.
     def self.call(path:, line_number:)
       declarations = module_delcarations_for(path: path, line_number: line_number.to_i)
       determine_namespace_from(declarations: declarations)
@@ -115,7 +121,6 @@ module JobGrapher
     def self.module_delcarations_for(path:, line_number:)
       declarations = []
 
-      # Should we read this in reverse order?
       File.readlines(path).each_with_index do |line, index|
         break if index + 1 > line_number
         match = NAMESPACE_REGEXP.match(line)
@@ -126,6 +131,8 @@ module JobGrapher
     end
     private_class_method :module_delcarations_for
 
+    # @note assume the declarations have been read from beginning of file to the
+    #       line number.
     def self.determine_namespace_from(declarations:)
       # Based on convention, this would be a 40 deep module; gods have
       # mercy.
@@ -150,8 +157,10 @@ module JobGrapher
   # 1. A simple data structure (e.g. an instance of the class)
   # 2. Building the data structure from the given directory; see .each_from
   class PerformInformation
+    # @see Parser::JOB_REGEXP
+    RIPGREP_PERFORM_REGEXP = '"^ *[^#]*Job\\.(perform|_*send_*|public_send)"'.freeze
     def self.each_from(dir)
-      command = %(rg "^ *[^#]*Job\\.(perform|_*send_*|public_send)" #{dir} -g '!spec/' -n)
+      command = %(rg #{RIPGREP_PERFORM_REGEXP} #{dir} -g '!spec/' -n)
       `#{command}`.split("\n").each do |line|
         parser = Parser.new(line)
         info = new(
@@ -173,6 +182,7 @@ module JobGrapher
 
     class Parser
       LINE_REGEXP = %r{(?<path>[^:]*):(?<line_number>[^:]*):(?<content>.*)}
+      # @see PerformInformation::RIPGREP_PERFORM_REGEXP
       JOB_REGEXP = %r{(?<job>[\w:]+Job)\.(perform|_*send_*|public_send)}
       def initialize(grep_result_line)
         @grep_result_line = grep_result_line
@@ -197,6 +207,7 @@ module JobGrapher
       attr_reader :job_class_name_candidates
 
       private
+
       def determine_job_candidates_from(job:, namespace:)
         candidates = [job]
         slugs = namespace.split("::")
@@ -217,8 +228,12 @@ module JobGrapher
   # The instance of the class is a simple data structure.  The .each_from yields
   # each data structure for matching declarations.
   class JobDeclaration
+    # @note there's a strong relation between this regexp fragment and that of
+    #       JOB_REGEXP
+    # @see JOB_REGEXP
+    RIPGREP_JOB_REGEXP = '"^ *class ([\\w:]+)Job <"'
     def self.each_from(dir)
-      command = %(rg "^ *class ([\\w:]+)Job <" #{dir} -g '!spec/' -n)
+      command = %(rg #{RIPGREP_JOB_REGEXP} #{dir} -g '!spec/' -n)
       `#{command}`.split("\n").each do |line|
         yield(new(line))
       end
@@ -230,6 +245,7 @@ module JobGrapher
     end
 
     LINE_REGEXP = %r{(?<path>[^:]*):(?<line_number>[^:]*):(?<content>.*)}
+    # @see RIPGREP_JOB_REGEXP
     JOB_REGEXP = %r{(?<job>[\w:]+Job) \<}
     def initialize(grep_result_line)
       @grep_result_line = grep_result_line
